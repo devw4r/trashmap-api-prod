@@ -33,6 +33,13 @@ export ANDROID_HOME=$HOME/Android/Sdk
 export PATH=$PATH:$ANDROID_HOME/platform-tools
 ```
 
+Windows (PowerShell):
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\\Android\\Sdk"
+$env:PATH = "$env:PATH;$env:ANDROID_HOME\\platform-tools"
+```
+
 3. JDK 17
 
 ```bash
@@ -89,15 +96,6 @@ Si quieres usar tus propias credenciales, actualiza:
 | `GOOGLE_MAPS_API_KEY` | Google Cloud Console -> APIs & Services -> Credentials |
 | `API_URL` | Tu backend |
 
-
-```bash
-cd android && ./gradlew signingReport
-```
-
-Agrega el SHA-1 (debug) en Firebase Console -> Project settings -> Your Android app,
-descarga de nuevo `android/app/google-services.json` y reemplazalo en el repo.
-
-
 ---
 
 ### Release (opcional)
@@ -136,6 +134,13 @@ cd android
 ./gradlew assembleRelease
 ```
 
+Windows (PowerShell):
+
+```powershell
+cd android
+./gradlew.bat assembleRelease
+```
+
 5. Agrega el SHA-1 de release en Firebase (para Google Sign-In):
 
 ```bash
@@ -160,6 +165,12 @@ Para crear `ANDROID_RELEASE_KEYSTORE_BASE64`:
 base64 -w 0 android/release.keystore
 ```
 
+Windows (PowerShell):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("android\\release.keystore"))
+```
+
 ---
 
 ### Troubleshooting
@@ -170,6 +181,14 @@ Si `./gradlew clean` falla con `externalNativeBuildCleanDebug`, borra caches nat
 rm -rf android/app/.cxx android/app/build
 cd android
 ./gradlew assembleDebug
+```
+
+Windows (PowerShell):
+
+```powershell
+rmdir /s /q android\\app\\.cxx android\\app\\build
+cd android
+./gradlew.bat assembleDebug
 ```
 
 ---
@@ -201,6 +220,13 @@ Then set `ANDROID_HOME` in your shell (`~/.bashrc` or `~/.zshrc`):
 ```bash
 export ANDROID_HOME=$HOME/Android/Sdk
 export PATH=$PATH:$ANDROID_HOME/platform-tools
+```
+
+Windows (PowerShell):
+
+```powershell
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\\Android\\Sdk"
+$env:PATH = "$env:PATH;$env:ANDROID_HOME\\platform-tools"
 ```
 
 3. JDK 17
@@ -246,7 +272,6 @@ For physical devices, connect Metro with:
 adb reverse tcp:8081 tcp:8081
 ```
 
-
 ### Configuration
 
 All config lives in `config.js`. The repo ships with dev values.
@@ -259,15 +284,6 @@ If you want your own credentials, update:
 | `GOOGLE_SIGNIN_WEB_CLIENT_ID` | Google Cloud Console -> APIs & Services -> Credentials -> OAuth 2.0 Web Client |
 | `GOOGLE_MAPS_API_KEY` | Google Cloud Console -> APIs & Services -> Credentials |
 | `API_URL` | Your backend |
-
-
-```bash
-cd android && ./gradlew signingReport
-```
-
-Add the debug SHA-1 in Firebase Console -> Project settings -> Your Android app,
-re-download `android/app/google-services.json` and replace it in the repo.
-
 
 ---
 
@@ -307,6 +323,13 @@ cd android
 ./gradlew assembleRelease
 ```
 
+Windows (PowerShell):
+
+```powershell
+cd android
+./gradlew.bat assembleRelease
+```
+
 5. Add the release SHA-1 in Firebase (for Google Sign-In):
 
 ```bash
@@ -331,6 +354,12 @@ To create `ANDROID_RELEASE_KEYSTORE_BASE64`:
 base64 -w 0 android/release.keystore
 ```
 
+Windows (PowerShell):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("android\\release.keystore"))
+```
+
 ---
 
 ### Troubleshooting
@@ -341,4 +370,12 @@ If `./gradlew clean` fails with `externalNativeBuildCleanDebug`, remove native c
 rm -rf android/app/.cxx android/app/build
 cd android
 ./gradlew assembleDebug
+```
+
+Windows (PowerShell):
+
+```powershell
+rmdir /s /q android\\app\\.cxx android\\app\\build
+cd android
+./gradlew.bat assembleDebug
 ```
