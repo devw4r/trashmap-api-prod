@@ -13,7 +13,7 @@ import {
   Alert,
   Share,
 } from "react-native";
-import MapView, { Marker, Callout } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
 import Geolocation from "react-native-geolocation-service";
 import { PermissionsAndroid } from "react-native";
 import axios from "axios";
@@ -30,7 +30,7 @@ GoogleSignin.configure({
 const API = API_URL;
 
 /** ---------- Bottom Sheet Modal ---------- */
-function BottomSheet({ visible, onClose, title, children }) {
+function BottomSheet({ visible, onClose, title, children, overlay }) {
   return (
     <Modal
       visible={visible}
@@ -39,6 +39,7 @@ function BottomSheet({ visible, onClose, title, children }) {
       onRequestClose={onClose}
     >
       <Pressable style={styles.backdrop} onPress={onClose}>
+        {overlay}
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.sheetHeader}>
             <View style={styles.sheetHandle} />
@@ -63,6 +64,22 @@ function alertError(title, message) {
 
 export default function App() {
   const mapRef = useRef(null);
+  const mapRegionRef = useRef(null);
+
+  const normalizeStatus = (value) =>
+    (value ?? "").toString().trim().toLowerCase();
+
+  const getStatusLabel = (value) => {
+    const status = normalizeStatus(value);
+    if (status === "open" || status === "abierto") return "Abierto";
+    if (status === "closed" || status === "cerrado") return "Cerrado";
+    return value ? String(value) : "Sin estado";
+  };
+
+  const isOpenStatus = (value) => {
+    const status = normalizeStatus(value);
+    return status === "open" || status === "abierto";
+  };
 
   const [user, setUser] = useState(null);
   const [signingIn, setSigningIn] = useState(false);
@@ -70,10 +87,15 @@ export default function App() {
   const [reports, setReports] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [loadingReports, setLoadingReports] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [minSplashDone, setMinSplashDone] = useState(false);
+  const [navStack, setNavStack] = useState([]);
 
   const [showLogin, setShowLogin] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [selectedReport, setSelectedReport] = useState(null);
 
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -148,6 +170,11 @@ export default function App() {
     fetchReports();
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setMinSplashDone(true), 800);
+    return () => clearTimeout(timer);
+  }, []);
+
   const filteredReports = useMemo(() => {
     const base =
       selectedStatus === "all"
@@ -185,6 +212,36 @@ export default function App() {
       })
     );
 
+  const getDistanceMeters = (a, b) => {
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(b.latitude - a.latitude);
+    const dLng = toRad(b.longitude - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.latitude);
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLng = Math.sin(dLng / 2);
+    const h =
+      sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+    return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  };
+
+  const getNearestReport = (from, list, excludeIds) => {
+    if (!from || !list.length) return null;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const item of list) {
+      if (item.id === from.id) continue;
+      if (excludeIds?.has(item.id)) continue;
+      const d = getDistanceMeters(from, item);
+      if (d < bestDistance) {
+        best = item;
+        bestDistance = d;
+      }
+    }
+    return best;
+  };
+
   const goToMyLocation = async () => {
     try {
       const hasPermission = await requestLocationPermission();
@@ -209,15 +266,74 @@ export default function App() {
 
   const focusReport = (report) => {
     if (!report) return;
+    const currentRegion = mapRegionRef.current;
     mapRef.current?.animateToRegion(
       {
         latitude: report.latitude,
         longitude: report.longitude,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
+        latitudeDelta: currentRegion?.latitudeDelta ?? 0.02,
+        longitudeDelta: currentRegion?.longitudeDelta ?? 0.02,
       },
       600
     );
+  };
+
+  const selectReport = (report) => {
+    if (!report) return;
+    setSelectedReport(report);
+    setShowReport(true);
+  };
+
+  const openReport = (report) => {
+    if (!report) return;
+    setNavStack([report.id]);
+    selectReport(report);
+  };
+
+  const closeReport = () => {
+    setShowReport(false);
+    setSelectedReport(null);
+    setNavStack([]);
+  };
+
+  useEffect(() => {
+    setNavStack([]);
+  }, [selectedStatus]);
+
+  useEffect(() => {
+    if (!selectedReport) return;
+    const exists = filteredReports.some((r) => r.id === selectedReport.id);
+    if (!exists) closeReport();
+  }, [filteredReports, selectedReport]);
+
+  useEffect(() => {
+    if (!selectedReport || !mapLoaded) return;
+    focusReport(selectedReport);
+  }, [selectedReport, mapLoaded]);
+
+  useEffect(() => {
+    if (selectedReport && navStack.length === 0) {
+      setNavStack([selectedReport.id]);
+    }
+  }, [selectedReport, navStack.length]);
+
+  const navigatePrev = () => {
+    if (navStack.length <= 1) return;
+    const nextStack = navStack.slice(0, -1);
+    const prevId = nextStack[nextStack.length - 1];
+    const prevReport = filteredReports.find((r) => r.id === prevId);
+    setNavStack(nextStack);
+    if (prevReport) {
+      selectReport(prevReport);
+    } else {
+      closeReport();
+    }
+  };
+
+  const navigateNext = (nextReport) => {
+    if (!nextReport) return;
+    setNavStack((prev) => [...prev, nextReport.id]);
+    selectReport(nextReport);
   };
 
   const openCreateModal = () => {
@@ -268,39 +384,90 @@ export default function App() {
     }
   };
 
+  const showNavArrows = selectedStatus === "all" || selectedStatus === "open";
+  const nextReport = useMemo(() => {
+    if (!selectedReport) return null;
+    const exclude = new Set(navStack);
+    exclude.add(selectedReport.id);
+    return getNearestReport(selectedReport, filteredReports, exclude);
+  }, [selectedReport, filteredReports, navStack]);
+  const canNavPrev = navStack.length > 1;
+  const canNavNext = !!selectedReport && !!nextReport;
+
+  const reportNumber = useMemo(() => {
+    if (!selectedReport) return null;
+    const inFiltered = filteredReports.findIndex(
+      (r) => r.id === selectedReport.id
+    );
+    if (inFiltered >= 0) return inFiltered + 1;
+    const inAll = reports.findIndex((r) => String(r.id) === selectedReport.id);
+    return inAll >= 0 ? inAll + 1 : null;
+  }, [selectedReport, filteredReports, reports]);
+
+  const renderNavOverlay = () => {
+    if (!showNavArrows) return null;
+    return (
+      <View style={styles.navOverlay} pointerEvents="box-none">
+        {!!selectedReport && (
+          <TouchableOpacity
+            style={[
+              styles.navEdgeBtn,
+              styles.navEdgeLeft,
+              !canNavPrev && styles.navEdgeDisabled,
+            ]}
+            onPress={navigatePrev}
+            disabled={!canNavPrev}
+          >
+            <Text style={styles.navEdgeText}>‹</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[
+            styles.navEdgeBtn,
+            styles.navEdgeRight,
+            !canNavNext && styles.navEdgeDisabled,
+          ]}
+          onPress={() => navigateNext(nextReport)}
+          disabled={!canNavNext}
+        >
+          <Text style={styles.navEdgeText}>›</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.appRoot}>
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
         initialRegion={region}
         showsUserLocation
+        showsMyLocationButton={false}
         zoomEnabled
         scrollEnabled
+        onMapLoaded={() => setMapLoaded(true)}
+        onRegionChangeComplete={(nextRegion) => {
+          mapRegionRef.current = nextRegion;
+        }}
       >
         {filteredReports.map((r) => (
           <Marker
             key={r.id}
             coordinate={{ latitude: r.latitude, longitude: r.longitude }}
-            pinColor={r.status === "open" ? "#EF4444" : "#6B7280"}
-            onCalloutPress={() => focusReport(r)}
+            pinColor={isOpenStatus(r.status) ? "#EF4444" : "#6B7280"}
+            onPress={() => openReport(r)}
           >
-            <Callout>
-              <View style={{ maxWidth: 220 }}>
-                <Text style={{ fontWeight: "bold", marginBottom: 2 }}>{r.title}</Text>
-                {!!r.description && (
-                  <Text style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
-                    {r.description}
-                  </Text>
-                )}
-                <Text style={{ fontSize: 11, color: r.status === "open" ? "#EF4444" : "#6B7280", fontWeight: "600" }}>
-                  {r.status?.toUpperCase()}
-                </Text>
-              </View>
-            </Callout>
           </Marker>
         ))}
       </MapView>
+
+      {(!mapLoaded || !minSplashDone) && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color="white" size="small" />
+          <Text style={styles.loadingText}>Cargando...</Text>
+        </View>
+      )}
 
       <View pointerEvents="box-none" style={StyleSheet.absoluteFillObject}>
         {user && (
@@ -336,11 +503,13 @@ export default function App() {
           ))}
 
           <TouchableOpacity style={styles.refreshBtn} onPress={fetchReports}>
-            <Text style={{ color: "white" }}>
-              {loadingReports ? "..." : "↻"}
+            <Text style={styles.refreshText}>
+              {loadingReports ? "..." : "Refrescar"}
             </Text>
           </TouchableOpacity>
         </View>
+
+        {!showReport && renderNavOverlay()}
 
         <TouchableOpacity style={styles.locBtn} onPress={goToMyLocation}>
           <Text style={{ color: "white", fontSize: 18 }}>📍</Text>
@@ -417,7 +586,7 @@ export default function App() {
                     newStatus === s && styles.statusPillTextActive,
                   ]}
                 >
-                  {s.toUpperCase()}
+                  {getStatusLabel(s).toUpperCase()}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -435,6 +604,45 @@ export default function App() {
             )}
           </TouchableOpacity>
         </KeyboardAvoidingView>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={showReport}
+        onClose={closeReport}
+        title="Reporte"
+        overlay={renderNavOverlay()}
+      >
+        {selectedReport ? (
+          <>
+            <Text style={styles.reportTitle}>
+              {selectedReport.title?.trim() ||
+                (reportNumber ? `Reporte No. ${reportNumber}` : "Reporte")}
+            </Text>
+            {reportNumber && selectedReport.title?.trim() && (
+              <Text style={styles.reportNumber}>Reporte No. {reportNumber}</Text>
+            )}
+            {selectedReport.description ? (
+              <Text style={styles.reportDesc}>{selectedReport.description}</Text>
+            ) : (
+              <Text style={styles.reportDescMuted}>Sin descripción.</Text>
+            )}
+            <View style={styles.reportMetaRow}>
+              <Text style={styles.reportMetaLabel}>Estado</Text>
+              <Text
+                style={[
+                  styles.reportStatus,
+                  isOpenStatus(selectedReport.status)
+                    ? styles.reportStatusOpen
+                    : styles.reportStatusClosed,
+                ]}
+              >
+                {getStatusLabel(selectedReport.status)}
+              </Text>
+            </View>
+          </>
+        ) : (
+          <Text style={styles.reportDescMuted}>Reporte no disponible.</Text>
+        )}
       </BottomSheet>
     </View>
   );
@@ -489,13 +697,58 @@ const styles = StyleSheet.create({
 
   refreshBtn: {
     marginLeft: "auto",
-    backgroundColor: "#111827",
-    width: 38,
-    height: 38,
-    borderRadius: 20,
+    backgroundColor: "#4285F4",
+    paddingHorizontal: 12,
+    minWidth: 92,
+    height: 34,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
     elevation: 5,
+  },
+
+  refreshText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  navOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  navEdgeBtn: {
+    position: "absolute",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    top: "50%",
+    marginTop: -19,
+    backgroundColor: "rgba(66,133,244,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(66,133,244,0.35)",
+  },
+
+  navEdgeLeft: {
+    left: 10,
+  },
+
+  navEdgeRight: {
+    right: 10,
+  },
+
+  navEdgeText: {
+    color: "#4285F4",
+    fontWeight: "700",
+    fontSize: 22,
+    lineHeight: 22,
+  },
+
+  navEdgeDisabled: {
+    opacity: 0.35,
   },
 
   locBtn: {
@@ -533,6 +786,26 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 26,
     elevation: 6,
+  },
+
+  appRoot: {
+    flex: 1,
+    backgroundColor: "#4285F4",
+  },
+
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#4285F4",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    zIndex: 100,
+  },
+
+  loadingText: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 16,
   },
 
   backdrop: {
@@ -635,5 +908,54 @@ const styles = StyleSheet.create({
 
   statusPillTextActive: {
     color: "white",
+  },
+
+  reportTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+
+  reportNumber: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "600",
+  },
+
+  reportDesc: {
+    fontSize: 13,
+    color: "#374151",
+  },
+
+  reportDescMuted: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontStyle: "italic",
+  },
+
+  reportMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 6,
+  },
+
+  reportMetaLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#111827",
+  },
+
+  reportStatus: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  reportStatusOpen: {
+    color: "#EF4444",
+  },
+
+  reportStatusClosed: {
+    color: "#6B7280",
   },
 });

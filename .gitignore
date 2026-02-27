@@ -20,6 +20,10 @@ android/local.properties
 .env
 .env.*
 
+# Android keystores
+android/keystore.properties
+android/*.keystore
+
 # OS
 .DS_Store
 Thumbs.db
