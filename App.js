@@ -437,7 +437,11 @@ export default function App() {
   };
 
   return (
-    <View style={styles.appRoot}>
+    <KeyboardAvoidingView
+      style={styles.appRoot}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
+    >
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFillObject}
@@ -644,7 +648,7 @@ export default function App() {
           <Text style={styles.reportDescMuted}>Reporte no disponible.</Text>
         )}
       </BottomSheet>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
